@@ -1032,7 +1032,10 @@ void tNMEA2000::SetHeartbeatInterval(unsigned long interval, bool SetAsDefault, 
 
 //*****************************************************************************
 void tNMEA2000::SendHeartbeat(int iDev) {
-  if ( !IsValidDevice(iDev) ) return;
+  if ( !IsValidDevice(iDev) ) {
+    N2kDbgln("Device %i is not valid, not sending heartbeat.", iDev);
+    return;
+  }
   tN2kMsg N2kMsg;
   SetHeartbeat(N2kMsg,Devices[iDev].HeartbeatInterval,0);
   SendMsg(N2kMsg,iDev);
@@ -1087,7 +1090,10 @@ void tNMEA2000::SendPendingInformation() {
 // Sends message to N2k bus
 //
 bool tNMEA2000::SendMsg(const tN2kMsg &N2kMsg, int DeviceIndex) {
-  if ( dbMode==dm_None && !Open() ) return false;
+  if ( dbMode==dm_None && !Open() ) {
+    N2kDbgln("Not sending message, as debug mode is dm_None, and NMEA bus is not open.");
+    return false;
+  }
 
   bool result=false;
 
@@ -1095,24 +1101,41 @@ bool tNMEA2000::SendMsg(const tN2kMsg &N2kMsg, int DeviceIndex) {
   N2kMsg.CheckDestination();
   if (DeviceIndex>=0) { N2kMsg.ForceSource(Devices[DeviceIndex].N2kSource); } else { DeviceIndex=0; }
 
-  if ( N2kMsg.Source>N2kMaxCanBusAddress && N2kMsg.PGN!=N2kPGNIsoAddressClaim ) return false; // CAN bus address range is 0-251. Anyway allow ISO address claim mgs.
+  if ( N2kMsg.Source>N2kMaxCanBusAddress && N2kMsg.PGN!=N2kPGNIsoAddressClaim ) {
+    N2kDbgln(
+      "Not sending message, as source address %i is larger than max allowable of %i.",
+      N2kMsg.Source,
+      N2kMaxCanBusAddress
+    );
+    return false; // CAN bus address range is 0-251. Anyway allow ISO address claim mgs.
+  }
 
   unsigned long canId=N2ktoCanID(N2kMsg.Priority,N2kMsg.PGN,N2kMsg.Source, N2kMsg.Destination);
 
   if ( canId==0 ) { // PGN validity - N2ktoCanID returns 0 for invalid PGN
 //    if (ForwardStream!=0 && ForwardType==tNMEA2000::fwdt_Text) { ForwardStream->print(F("Invalid PGN ")); ForwardStream->println(N2kMsg.PGN); }
+    N2kDbgln("Not sending message, as PGN %i is invalid, causing N2ktoCanID to return 0.", N2kMsg.PGN);
     return false;
   }
 
-  if (N2kMode==N2km_ListenOnly) return false; // Do not send anything on listen only mode
+  if (N2kMode==N2km_ListenOnly) {
+    N2kDbgln("Not sending message while in listen-only mode.");
+    return false; // Do not send anything on listen only mode
+  }
 
-  if (N2kMsg.PGN==0) return false;
+  if (N2kMsg.PGN==0) {
+    N2kDbgln("Not sending message, as PGN was 0.");
+    return false;
+  }
 
   switch (dbMode) {
     case dm_None:
       N2kMsgDbg("Send PGN:"); N2kMsgDbgln(N2kMsg.PGN);
       N2kMsgDbg("Can ID:"); N2kMsgDbgln(canId);
-      if ( IsAddressClaimStarted(DeviceIndex) && N2kMsg.PGN!=N2kPGNIsoAddressClaim ) return false;
+      if ( IsAddressClaimStarted(DeviceIndex) && N2kMsg.PGN!=N2kPGNIsoAddressClaim ) {
+        N2kDbgln("Not sending message, as address claim has started, and PGN %i is not ISO address claim PGN %i.", N2kMsg.PGN, N2kPGNIsoAddressClaim);
+        return false;
+      }
 
       if (N2kMsg.DataLen<=8 && !IsFastPacket(N2kMsg) ) { // We can send single frame
           DbgPrintBuf(N2kMsg.DataLen, N2kMsg.Data,true);
